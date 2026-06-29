@@ -25,7 +25,11 @@ app.use(helmet({
 
 // CORS — only allow our frontend
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: [
+  'https://laureafashionhouse.com',
+  'https://www.laureafashionhouse.com',
+  'http://localhost:3000'
+],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
