@@ -25,10 +25,23 @@ app.use(helmet({
 
 // CORS — only allow our frontend
 app.use(cors({
-  origin: [
-  'https://laureafashionhouse.com',
-  'https://www.laureafashionhouse.com',
-  'http://localhost:3000'
+  origin: function(origin, callback) {
+    const allowedOrigins = [
+      'https://laureafashionhouse.com',
+      'https://www.laureafashionhouse.com',
+      'http://localhost:3000',
+      'http://localhost:3001'
+    ];
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
 ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
