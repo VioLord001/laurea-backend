@@ -69,6 +69,15 @@ const register = async (req, res, next) => {
       template: 'welcome',
       data: { firstName: user.first_name, verifyToken }
     });
+    // Track login
+await query(
+  `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
+  [user.id]
+);
+await query(
+  `INSERT INTO user_sessions (user_id, ip_address, device) VALUES ($1, $2, $3)`,
+  [user.id, req.ip, req.headers['user-agent']]
+);
 
     sendTokenResponse(user, 201, res);
   } catch (err) {

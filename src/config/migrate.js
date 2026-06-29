@@ -276,7 +276,29 @@ const createTables = async () => {
       ON CONFLICT (code) DO NOTHING;
     `);
     console.log('✅ Default promo code inserted (LAUREA20 — 20% off)');
+    // User login tracking table
+await client.query(`
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    ip_address VARCHAR(50),
+    device TEXT,
+    logged_in_at TIMESTAMPTZ DEFAULT NOW(),
+    logged_out_at TIMESTAMPTZ,
+    is_active BOOLEAN DEFAULT true
+  );
+`);
+console.log('✅ user_sessions table');
 
+// Add is_approved column to users
+await client.query(`
+  ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS last_login TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS login_count INTEGER DEFAULT 0;
+`);
+console.log('✅ user approval columns added');
+s
     await client.query('COMMIT');
     console.log('\n✅ All migrations completed successfully!\n');
   } catch (err) {
