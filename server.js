@@ -20,31 +20,35 @@ const allowedOrigins = [
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.options('*', cors());
-
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: { success: false, message: 'Too many requests, please try again later.' }
 });
 app.use('/api/', limiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   message: { success: false, message: 'Too many login attempts, please try again in 15 minutes.' }
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 app.use(compression());
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
@@ -61,18 +65,18 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/api/auth',       require('./src/routes/auth.routes'));
-app.use('/api/users',      require('./src/routes/user.routes'));
-app.use('/api/products',   require('./src/routes/product.routes'));
+app.use('/api/auth', require('./src/routes/auth.routes'));
+app.use('/api/users', require('./src/routes/user.routes'));
+app.use('/api/products', require('./src/routes/product.routes'));
 app.use('/api/categories', require('./src/routes/category.routes'));
-app.use('/api/orders',     require('./src/routes/order.routes'));
-app.use('/api/cart',       require('./src/routes/cart.routes'));
-app.use('/api/wishlist',   require('./src/routes/wishlist.routes'));
-app.use('/api/reviews',    require('./src/routes/review.routes'));
-app.use('/api/payments',   require('./src/routes/payment.routes'));
-app.use('/api/admin',      require('./src/routes/admin.routes'));
-app.use('/api/search',     require('./src/routes/search.routes'));
-app.use('/api/promo',      require('./src/routes/promo.routes'));
+app.use('/api/orders', require('./src/routes/order.routes'));
+app.use('/api/cart', require('./src/routes/cart.routes'));
+app.use('/api/wishlist', require('./src/routes/wishlist.routes'));
+app.use('/api/reviews', require('./src/routes/review.routes'));
+app.use('/api/payments', require('./src/routes/payment.routes'));
+app.use('/api/admin', require('./src/routes/admin.routes'));
+app.use('/api/search', require('./src/routes/search.routes'));
+app.use('/api/promo', require('./src/routes/promo.routes'));
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
@@ -83,19 +87,13 @@ app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   res.status(statusCode).json({
     success: false,
-    message: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    message: err.message || 'Internal server error'
   });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`
-  ╔═══════════════════════════════════════╗
-  ║   LAUREA FASHION HOUSE — API Server   ║
-  ║   Port: ${PORT}  |  ENV: ${process.env.NODE_ENV || 'development'}        ║
-  ╚═══════════════════════════════════════╝
-  `);
+  console.log('Laurea Fashion House API running on port ' + PORT);
 });
 
 module.exports = app;
