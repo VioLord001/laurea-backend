@@ -2,7 +2,9 @@
 // STAGE 3+4: PAYMENT CONTROLLER
 // Stripe payment intents + webhooks
 // ============================================
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'skip'
+  ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+  : null;
 const { query } = require('../config/database');
 
 // POST /api/payments/create-intent
