@@ -1,8 +1,3 @@
-// ============================================
-// LAUREA FASHION HOUSE — MAIN SERVER
-// Stage 3: Backend & Stage 4: Security
-// ============================================
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -12,43 +7,27 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 
-// ── Stage 4: Security Middleware ──────────────────────
-// Helmet sets secure HTTP headers
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' }
-}));
+const allowedOrigins = [
+  'https://laureafashionhouse.com',
+  'https://www.laureafashionhouse.com',
+  'http://localhost:3000'
+];
 
-// CORS — only allow our frontend
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
 app.use(cors({
-  origin: function(origin, callback) {
-    const allowedOrigins = [
-      'https://laureafashionhouse.com',
-      'https://www.laureafashionhouse.com',
-      'http://localhost:3000',
-      'http://localhost:3001'
-    ];
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(null, true);
-    }
-  },
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
-],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting — prevent brute force / spam
+app.options('*', cors());
+
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX) || 100,
@@ -56,7 +35,6 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Stricter limiter for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -65,17 +43,14 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// ── Core Middleware ───────────────────────────────────
 app.use(compression());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Stripe webhook needs raw body — mount BEFORE json parser
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
-// ── Stage 7: Health Check ─────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -86,7 +61,6 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ── Stage 3: API Routes ───────────────────────────────
 app.use('/api/auth',       require('./src/routes/auth.routes'));
 app.use('/api/users',      require('./src/routes/user.routes'));
 app.use('/api/products',   require('./src/routes/product.routes'));
@@ -100,12 +74,10 @@ app.use('/api/admin',      require('./src/routes/admin.routes'));
 app.use('/api/search',     require('./src/routes/search.routes'));
 app.use('/api/promo',      require('./src/routes/promo.routes'));
 
-// ── 404 Handler ───────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
-// ── Global Error Handler ──────────────────────────────
 app.use((err, req, res, next) => {
   console.error(err.stack);
   const statusCode = err.statusCode || 500;
@@ -116,7 +88,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ── Start Server ──────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`
