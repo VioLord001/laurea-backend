@@ -2,14 +2,20 @@
 // STAGE 3+4: PAYMENT CONTROLLER
 // Stripe payment intents + webhooks
 // ============================================
-const stripe = process.env.STRIPE_SECRET_KEY && process.env.STRIPE_SECRET_KEY !== 'skip'
+const stripe = process.env.STRIPE_SECRET_KEY && 
+  process.env.STRIPE_SECRET_KEY !== 'skip' && 
+  !process.env.STRIPE_SECRET_KEY.includes('your_stripe')
   ? require('stripe')(process.env.STRIPE_SECRET_KEY)
   : null;
+
 const { query } = require('../config/database');
 
 // POST /api/payments/create-intent
 const createPaymentIntent = async (req, res, next) => {
   try {
+    if (!stripe) {
+      return res.status(503).json({ success: false, message: 'Payments not configured yet.' });
+    }
     const { orderId } = req.body;
     const orderRes = await query(
       'SELECT * FROM orders WHERE id = $1 AND user_id = $2',
@@ -19,19 +25,16 @@ const createPaymentIntent = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Order not found.' });
     }
     const order = orderRes.rows[0];
-
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(parseFloat(order.total_amount) * 100), // Stripe uses cents
+      amount: Math.round(parseFloat(order.total_amount) * 100),
       currency: order.currency?.toLowerCase() || 'usd',
       metadata: { orderId: order.id, orderNumber: order.order_number, userId: req.user.id },
       automatic_payment_methods: { enabled: true }
     });
-
     await query(
       'UPDATE orders SET stripe_payment_intent_id = $1 WHERE id = $2',
       [paymentIntent.id, orderId]
     );
-
     res.json({
       success: true,
       clientSecret: paymentIntent.client_secret,
@@ -44,15 +47,16 @@ const createPaymentIntent = async (req, res, next) => {
 
 // POST /api/payments/webhook — Stripe sends events here
 const handleWebhook = async (req, res) => {
+  if (!stripe) {
+    return res.status(503).json({ message: 'Payments not configured yet.' });
+  }
   const sig = req.headers['stripe-signature'];
   let event;
-
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return res.status(400).json({ message: `Webhook signature failed: ${err.message}` });
   }
-
   try {
     switch (event.type) {
       case 'payment_intent.succeeded': {
