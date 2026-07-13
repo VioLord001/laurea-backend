@@ -96,4 +96,4 @@ app.listen(PORT, () => {
   console.log('Laurea Fashion House API running on port ' + PORT);
 });
 
-module.exports = app;ss
+module.exports = app;
