@@ -9,6 +9,7 @@ const getProducts = async (req, res, next) => {
     const params = [];
     let paramCount = 1;
     if (department) { conditions.push(`p.department = $${paramCount++}`); params.push(department); }
+    if (category) { conditions.push(`p.category_name ILIKE $${paramCount++}`); params.push(category); }
     if (badge) { conditions.push(`p.badge = $${paramCount++}`); params.push(badge); }
     if (minPrice) { conditions.push(`p.price >= $${paramCount++}`); params.push(minPrice); }
     if (maxPrice) { conditions.push(`p.price <= $${paramCount++}`); params.push(maxPrice); }
@@ -20,9 +21,9 @@ const getProducts = async (req, res, next) => {
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
     const countResult = await query(`SELECT COUNT(*) FROM products p ${whereClause}`, params);
     const result = await query(
-      `SELECT p.*, c.name as category_name, c.slug as category_slug,
+      `SELECT p.*,
         (SELECT url FROM product_images WHERE product_id = p.id AND is_primary = true LIMIT 1) as primary_image
-       FROM products p LEFT JOIN categories c ON p.category_id = c.id
+       FROM products p
        ${whereClause} ORDER BY ${sortColumn} ${sortOrder}
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
       [...params, parseInt(limit), offset]
@@ -36,27 +37,28 @@ const getProduct = async (req, res, next) => {
   try {
     const { slug } = req.params;
     const result = await query(
-      `SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE p.slug = $1 AND p.is_active = true`,
+      `SELECT p.* FROM products p WHERE p.slug = $1 AND p.is_active = true`,
       [slug]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Product not found.' });
     const product = result.rows[0];
     const images = await query('SELECT * FROM product_images WHERE product_id = $1 ORDER BY sort_order', [product.id]);
-    const variants = await query('SELECT * FROM product_variants WHERE product_id = $1', [product.id]);
+    let variants = { rows: [] };
+    try { variants = await query('SELECT * FROM product_variants WHERE product_id = $1', [product.id]); } catch(e) {}
     res.json({ success: true, product: { ...product, images: images.rows, variants: variants.rows } });
   } catch (err) { next(err); }
 };
 
 const createProduct = async (req, res, next) => {
   try {
-    const { name, description, price, comparePrice, compare_price, categoryId, department, badge, tags, isFeatured, category, sizes, colors, stock } = req.body;
+    const { name, description, price, comparePrice, compare_price, department, badge, tags, isFeatured, category, sizes, colors, stock } = req.body;
     const slug = slugify(name) + '-' + Date.now();
     const finalComparePrice = comparePrice || compare_price || null;
     const finalTags = tags || sizes || [];
     const result = await query(
-      `INSERT INTO products (name, slug, description, price, compare_price, department, badge, tags, is_featured, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true) RETURNING *`,
-      [name, slug, description || '', parseFloat(price), finalComparePrice ? parseFloat(finalComparePrice) : null, department, badge || null, finalTags, isFeatured || false]
+      `INSERT INTO products (name, slug, description, price, compare_price, department, category_name, badge, tags, is_featured, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true) RETURNING *`,
+      [name, slug, description || '', parseFloat(price), finalComparePrice ? parseFloat(finalComparePrice) : null, department, category || null, badge || null, finalTags, isFeatured || false]
     );
     res.status(201).json({ success: true, product: result.rows[0] });
   } catch (err) { next(err); }
@@ -65,17 +67,23 @@ const createProduct = async (req, res, next) => {
 const updateProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, description, price, comparePrice, compare_price, department, badge, tags, isFeatured, isActive, sizes, colors } = req.body;
+    const { name, description, price, comparePrice, compare_price, department, badge, tags, isFeatured, isActive, sizes, colors, category } = req.body;
     const finalTags = tags || sizes || null;
     const result = await query(
       `UPDATE products SET
-        name = COALESCE($1, name), description = COALESCE($2, description),
-        price = COALESCE($3, price), compare_price = COALESCE($4, compare_price),
-        department = COALESCE($5, department), badge = COALESCE($6, badge),
-        tags = COALESCE($7, tags), is_featured = COALESCE($8, is_featured),
-        is_active = COALESCE($9, is_active), updated_at = NOW()
-       WHERE id = $10 RETURNING *`,
-      [name, description, price ? parseFloat(price) : null, comparePrice || compare_price ? parseFloat(comparePrice || compare_price) : null, department, badge, finalTags, isFeatured, isActive, id]
+        name = COALESCE($1, name),
+        description = COALESCE($2, description),
+        price = COALESCE($3, price),
+        compare_price = COALESCE($4, compare_price),
+        department = COALESCE($5, department),
+        badge = COALESCE($6, badge),
+        tags = COALESCE($7, tags),
+        is_featured = COALESCE($8, is_featured),
+        is_active = COALESCE($9, is_active),
+        category_name = COALESCE($10, category_name),
+        updated_at = NOW()
+       WHERE id = $11 RETURNING *`,
+      [name, description, price ? parseFloat(price) : null, comparePrice || compare_price ? parseFloat(comparePrice || compare_price) : null, department, badge, finalTags, isFeatured, isActive, category || null, id]
     );
     if (result.rows.length === 0) return res.status(404).json({ success: false, message: 'Product not found.' });
     res.json({ success: true, product: result.rows[0] });
@@ -112,7 +120,6 @@ const uploadProductImages = async (req, res, next) => {
       for (let i = 0; i < req.files.length; i++) {
         const file = req.files[i];
         let imageUrl = null;
-
         try {
           const cloudinary = require('cloudinary').v2;
           cloudinary.config({
@@ -129,7 +136,6 @@ const uploadProductImages = async (req, res, next) => {
           console.error('Cloudinary upload error:', cloudErr.message);
           continue;
         }
-
         if (imageUrl) {
           const isPrimary = startIndex === 0 && i === 0;
           const result = await query(
