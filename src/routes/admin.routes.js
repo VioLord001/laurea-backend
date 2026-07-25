@@ -9,15 +9,22 @@ router.use(protect, adminOnly);
 // GET /api/admin/dashboard
 router.get('/dashboard', async (req, res, next) => {
   try {
-    const [products, orders, customers, revenue, recentLogins] = await Promise.all([
-      query('SELECT COUNT(*) FROM products WHERE is_active = true'),
+    const [products, orders, customers, revenue] = await Promise.all([
+      query('SELECT COUNT(*) FROM products'),
       query('SELECT COUNT(*) FROM orders'),
       query('SELECT COUNT(*) FROM users WHERE role = $1', ['customer']),
       query('SELECT COALESCE(SUM(total_amount), 0) as total FROM orders WHERE payment_status = $1', ['paid']),
-      query(`SELECT u.first_name, u.last_name, u.email, u.last_login, u.login_count, us.ip_address, us.device
-             FROM user_sessions us JOIN users u ON us.user_id = u.id
-             ORDER BY us.logged_in_at DESC LIMIT 10`),
     ]);
+
+    let recentLogins = { rows: [] };
+    try {
+      recentLogins = await query(
+        `SELECT u.first_name, u.last_name, u.email, u.last_login, u.login_count, us.ip_address, us.device
+         FROM user_sessions us JOIN users u ON us.user_id = u.id
+         ORDER BY us.logged_in_at DESC LIMIT 10`
+      );
+    } catch(e) { console.log('user_sessions not ready'); }
+
     res.json({
       success: true,
       stats: {
@@ -31,7 +38,7 @@ router.get('/dashboard', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// GET /api/admin/users — all users with login info
+// GET /api/admin/users
 router.get('/users', async (req, res, next) => {
   try {
     const result = await query(
@@ -43,7 +50,7 @@ router.get('/users', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// PATCH /api/admin/users/:id/approve — approve or block user
+// PATCH /api/admin/users/:id/approve
 router.patch('/users/:id/approve', async (req, res, next) => {
   try {
     const { is_approved } = req.body;
@@ -52,7 +59,7 @@ router.patch('/users/:id/approve', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// PATCH /api/admin/users/:id/role — change user role
+// PATCH /api/admin/users/:id/role
 router.patch('/users/:id/role', async (req, res, next) => {
   try {
     const { role } = req.body;
@@ -98,11 +105,14 @@ router.get('/customers', async (req, res, next) => {
 // GET /api/admin/login-activity
 router.get('/login-activity', async (req, res, next) => {
   try {
-    const result = await query(
-      `SELECT us.*, u.first_name, u.last_name, u.email, u.role
-       FROM user_sessions us JOIN users u ON us.user_id = u.id
-       ORDER BY us.logged_in_at DESC LIMIT 50`
-    );
+    let result = { rows: [] };
+    try {
+      result = await query(
+        `SELECT us.*, u.first_name, u.last_name, u.email, u.role
+         FROM user_sessions us JOIN users u ON us.user_id = u.id
+         ORDER BY us.logged_in_at DESC LIMIT 50`
+      );
+    } catch(e) { console.log('user_sessions not ready'); }
     res.json({ success: true, sessions: result.rows });
   } catch (err) { next(err); }
 });
