@@ -10,7 +10,7 @@ router.use(protect, adminOnly);
 router.get('/dashboard', async (req, res, next) => {
   try {
     const [products, orders, customers, revenue] = await Promise.all([
-      query('SELECT COUNT(*) FROM products'),
+      query('SELECT COUNT(*) FROM products WHERE is_active = true'),
       query('SELECT COUNT(*) FROM orders'),
       query('SELECT COUNT(*) FROM users WHERE role = $1', ['customer']),
       query('SELECT COALESCE(SUM(total_amount), 0) as total FROM orders WHERE payment_status = $1', ['paid']),
