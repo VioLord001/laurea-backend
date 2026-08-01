@@ -1,21 +1,15 @@
-// ============================================
-// STAGE 4: AUTH CONTROLLER
-// Register, Login, Logout, Password Reset
-// ============================================
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { query } = require('../config/database');
 const { sendEmail } = require('../services/email.service');
 
-// Generate JWT
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || '7d'
   });
 };
 
-// Send token in cookie + response
 const sendTokenResponse = (user, statusCode, res) => {
   const token = signToken(user.id);
   const cookieOptions = {
@@ -29,13 +23,33 @@ const sendTokenResponse = (user, statusCode, res) => {
     token,
     user: {
       id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
       firstName: user.first_name,
       lastName: user.last_name,
       email: user.email,
-      role: user.role,
-      avatar: user.avatar
+      role: user.role || 'customer',
+      avatar: user.avatar,
+      employee_profile_completed: user.employee_profile_completed || false,
     }
   });
+};
+
+const getLocation = async (ip) => {
+  try {
+    const cleanIp = ip?.replace('::ffff:', '') || '';
+    if (!cleanIp || cleanIp === '::1' || cleanIp === '127.0.0.1') {
+      return { country: 'Local', city: 'Local' };
+    }
+    const geoRes = await fetch(`http://ip-api.com/json/${cleanIp}?fields=country,city,status`);
+    const geo = await geoRes.json();
+    if (geo.status === 'success') {
+      return { country: geo.country || 'Unknown', city: geo.city || 'Unknown' };
+    }
+    return { country: 'Unknown', city: 'Unknown' };
+  } catch {
+    return { country: 'Unknown', city: 'Unknown' };
+  }
 };
 
 // POST /api/auth/register
@@ -43,17 +57,14 @@ const register = async (req, res, next) => {
   try {
     const { firstName, lastName, email, password } = req.body;
 
-    // Check if user exists
     const existing = await query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
     if (existing.rows.length > 0) {
       return res.status(400).json({ success: false, message: 'Email already registered.' });
     }
 
-    // Hash password — Stage 4 Security: bcrypt with 12 salt rounds
     const hashedPassword = await bcrypt.hash(password, 12);
     const verifyToken = crypto.randomBytes(32).toString('hex');
 
-    // Create user
     const result = await query(
       `INSERT INTO users (first_name, last_name, email, password, email_verify_token)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
@@ -62,22 +73,35 @@ const register = async (req, res, next) => {
 
     const user = result.rows[0];
 
-    // Send welcome email
-    await sendEmail({
-      to: user.email,
-      subject: 'Welcome to Laurea Fashion House!',
-      template: 'welcome',
-      data: { firstName: user.first_name, verifyToken }
-    });
-    // Track login
-await query(
-  `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
-  [user.id]
-);
-await query(
-  `INSERT INTO user_sessions (user_id, ip_address, device) VALUES ($1, $2, $3)`,
-  [user.id, req.ip, req.headers['user-agent']]
-);
+    // Send welcome email — non critical
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Welcome to Laurea Fashion House!',
+        template: 'welcome',
+        data: { firstName: user.first_name, verifyToken }
+      });
+    } catch(emailErr) {
+      console.log('Welcome email failed (non-critical):', emailErr.message);
+    }
+
+    // Track registration login
+    try {
+      const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
+      const device = req.headers['user-agent'] || 'unknown';
+      const { country, city } = await getLocation(ip);
+
+      await query(
+        `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
+        [user.id]
+      );
+      await query(
+        `INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, ip, device, country, city]
+      );
+    } catch(trackErr) {
+      console.log('Login tracking failed (non-critical):', trackErr.message);
+    }
 
     sendTokenResponse(user, 201, res);
   } catch (err) {
@@ -90,7 +114,6 @@ const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    // Find user with password
     const result = await query(
       'SELECT * FROM users WHERE email = $1 AND is_active = true',
       [email.toLowerCase()]
@@ -102,7 +125,6 @@ const login = async (req, res, next) => {
 
     const user = result.rows[0];
 
-    // Check password
     if (!user.password) {
       return res.status(401).json({ success: false, message: 'Please login with your social account.' });
     }
@@ -110,6 +132,24 @@ const login = async (req, res, next) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+    }
+
+    // Track login with location
+    try {
+      const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
+      const device = req.headers['user-agent'] || 'unknown';
+      const { country, city } = await getLocation(ip);
+
+      await query(
+        `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
+        [user.id]
+      );
+      await query(
+        `INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`,
+        [user.id, ip, device, country, city]
+      );
+    } catch(trackErr) {
+      console.log('Login tracking failed (non-critical):', trackErr.message);
     }
 
     sendTokenResponse(user, 200, res);
@@ -123,13 +163,14 @@ const logout = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1] || req.cookies?.token;
     if (token) {
-      // Blacklist the token
       const decoded = jwt.decode(token);
       if (decoded?.exp) {
-        await query(
-          'INSERT INTO token_blacklist (token, expires_at) VALUES ($1, to_timestamp($2))',
-          [token, decoded.exp]
-        );
+        try {
+          await query(
+            'INSERT INTO token_blacklist (token, expires_at) VALUES ($1, to_timestamp($2))',
+            [token, decoded.exp]
+          );
+        } catch(e) { console.log('Token blacklist failed:', e.message); }
       }
     }
     res.cookie('token', '', { expires: new Date(0), httpOnly: true });
@@ -144,31 +185,28 @@ const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
     const result = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
-
-    // Always return same message for security (don't reveal if email exists)
     const message = 'If that email exists, a reset link has been sent.';
-
     if (result.rows.length === 0) {
       return res.json({ success: true, message });
     }
-
     const user = result.rows[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
     await query(
       'UPDATE users SET password_reset_token = $1, password_reset_expires = $2 WHERE id = $3',
       [hashedToken, expires, user.id]
     );
-
-    await sendEmail({
-      to: user.email,
-      subject: 'Reset your Laurea password',
-      template: 'passwordReset',
-      data: { firstName: user.first_name, resetToken, resetUrl: `${process.env.CLIENT_URL}/auth/reset-password?token=${resetToken}` }
-    });
-
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset your Laurea password',
+        template: 'passwordReset',
+        data: { firstName: user.first_name, resetToken, resetUrl: `${process.env.CLIENT_URL}/auth/reset-password?token=${resetToken}` }
+      });
+    } catch(emailErr) {
+      console.log('Reset email failed:', emailErr.message);
+    }
     res.json({ success: true, message });
   } catch (err) {
     next(err);
@@ -180,23 +218,19 @@ const resetPassword = async (req, res, next) => {
   try {
     const { token } = req.params;
     const { password } = req.body;
-
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
     const result = await query(
       'SELECT * FROM users WHERE password_reset_token = $1 AND password_reset_expires > NOW()',
       [hashedToken]
     );
-
     if (result.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'Reset token is invalid or has expired.' });
     }
-
     const hashedPassword = await bcrypt.hash(password, 12);
     await query(
       'UPDATE users SET password = $1, password_reset_token = NULL, password_reset_expires = NULL WHERE id = $2',
       [hashedPassword, result.rows[0].id]
     );
-
     res.json({ success: true, message: 'Password reset successfully. Please log in.' });
   } catch (err) {
     next(err);
