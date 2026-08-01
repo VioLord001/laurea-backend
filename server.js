@@ -9,6 +9,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const app = express();
+app.set('trust proxy', true);
 
 const allowedOrigins = [
   'https://laureafashionhouse.com',
