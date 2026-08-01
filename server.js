@@ -6,7 +6,6 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
-
 dotenv.config();
 
 const app = express();
@@ -18,7 +17,6 @@ const allowedOrigins = [
 ];
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -52,7 +50,6 @@ app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
-
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
 app.get('/health', (req, res) => {
@@ -77,6 +74,8 @@ app.use('/api/payments', require('./src/routes/payment.routes'));
 app.use('/api/admin', require('./src/routes/admin.routes'));
 app.use('/api/search', require('./src/routes/search.routes'));
 app.use('/api/promo', require('./src/routes/promo.routes'));
+app.use('/api/staff', require('./src/routes/staff.routes'));
+app.use('/api/employees', require('./src/routes/employee.routes'));
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
