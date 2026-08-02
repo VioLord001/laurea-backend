@@ -1,7 +1,3 @@
-// ============================================
-// STAGE 8: EMAIL SERVICE (Resend)
-// Order confirmations, password resets, etc.
-// ============================================
 const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -24,6 +20,31 @@ const emailTemplates = {
             </a>
           </div>
           <p style="color:#8a7a6a;font-size:12px;">Use code <strong>LAUREA20</strong> for 20% off your first order.</p>
+        </div>
+        <div style="background:#f5ede0;padding:16px 24px;font-size:11px;color:#8a7a6a;text-align:center;">
+          <p>© 2026 Laurea Fashion House. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  verificationCode: (data) => ({
+    subject: `${data.code} — Your Laurea verification code`,
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#2a1e10;">
+        <div style="background:#1c1208;padding:24px;text-align:center;">
+          <h1 style="color:#b8966a;letter-spacing:4px;font-size:22px;margin:0;">LAUREA</h1>
+          <p style="color:#f5ede0;font-size:10px;letter-spacing:4px;margin:4px 0 0;">FASHION HOUSE</p>
+        </div>
+        <div style="padding:32px 24px;text-align:center;">
+          <h2 style="color:#1c1208;">${data.type === 'login' ? 'Login Verification' : 'Verify Your Email'}</h2>
+          <p style="color:#8a7a6a;">Hello ${data.firstName}, use the code below to ${data.type === 'login' ? 'complete your login' : 'verify your email address'}.</p>
+          <div style="background:#faf8f5;border:2px solid #b8966a;border-radius:12px;padding:32px;margin:24px 0;display:inline-block;width:100%;box-sizing:border-box;">
+            <p style="font-size:48px;font-weight:700;letter-spacing:12px;color:#1c1208;margin:0;">${data.code}</p>
+            <p style="color:#8a7a6a;font-size:12px;margin:12px 0 0;">This code expires in <strong>10 minutes</strong></p>
+          </div>
+          <p style="color:#8a7a6a;font-size:12px;">If you did not request this code please ignore this email.</p>
+          <p style="color:#8a7a6a;font-size:12px;">Do not share this code with anyone.</p>
         </div>
         <div style="background:#f5ede0;padding:16px 24px;font-size:11px;color:#8a7a6a;text-align:center;">
           <p>© 2026 Laurea Fashion House. All rights reserved.</p>
@@ -72,7 +93,7 @@ const emailTemplates = {
               Reset my password
             </a>
           </div>
-          <p style="color:#8a7a6a;font-size:12px;">This link expires in 10 minutes. If you didn't request this, please ignore this email.</p>
+          <p style="color:#8a7a6a;font-size:12px;">This link expires in 10 minutes. If you did not request this please ignore this email.</p>
         </div>
       </div>
     `
@@ -83,18 +104,15 @@ const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
     const templateFn = emailTemplates[template];
     const content = templateFn ? templateFn(data) : { subject, html };
-
     const result = await resend.emails.send({
       from: process.env.FROM_EMAIL || 'Laurea Fashion House <noreply@laureafashionhouse.com>',
       to,
       subject: content.subject,
       html: content.html
     });
-
     return result;
   } catch (err) {
     console.error('Email send failed:', err);
-    // Don't throw — email failure shouldn't break the request
   }
 };
 

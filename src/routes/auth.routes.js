@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, logout, forgotPassword, resetPassword, getMe } = require('../controllers/auth.controller');
+const { register, login, logout, forgotPassword, resetPassword, getMe, verifyRegistration, verifyLogin, resendCode } = require('../controllers/auth.controller');
 const { protect } = require('../middleware/auth.middleware');
 const { body } = require('express-validator');
 const validate = require('../middleware/validate.middleware');
@@ -19,6 +19,24 @@ router.post('/login', [
   body('password').notEmpty(),
   validate
 ], login);
+
+router.post('/verify-registration', [
+  body('email').isEmail().normalizeEmail(),
+  body('code').notEmpty().withMessage('Verification code is required'),
+  validate
+], verifyRegistration);
+
+router.post('/verify-login', [
+  body('email').isEmail().normalizeEmail(),
+  body('code').notEmpty().withMessage('Verification code is required'),
+  validate
+], verifyLogin);
+
+router.post('/resend-code', [
+  body('email').isEmail().normalizeEmail(),
+  body('type').notEmpty(),
+  validate
+], resendCode);
 
 router.post('/logout', protect, logout);
 router.post('/forgot-password', [body('email').isEmail().normalizeEmail(), validate], forgotPassword);

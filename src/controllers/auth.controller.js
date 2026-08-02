@@ -35,6 +35,8 @@ const sendTokenResponse = (user, statusCode, res) => {
   });
 };
 
+const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+
 const getLocation = async (ip) => {
   try {
     const cleanIp = ip?.replace('::ffff:', '') || '';
@@ -63,34 +65,86 @@ const register = async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    const verifyToken = crypto.randomBytes(32).toString('hex');
 
     const result = await query(
-      `INSERT INTO users (first_name, last_name, email, password, email_verify_token)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [firstName, lastName, email.toLowerCase(), hashedPassword, verifyToken]
+      `INSERT INTO users (first_name, last_name, email, password, is_email_verified)
+       VALUES ($1, $2, $3, $4, false) RETURNING *`,
+      [firstName, lastName, email.toLowerCase(), hashedPassword]
     );
 
     const user = result.rows[0];
 
-    // Send welcome email — non critical
+    // Generate verification code
+    const code = generateCode();
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
+
+    await query(
+      `INSERT INTO verification_codes (user_id, email, code, type, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [user.id, user.email, code, 'register', expires]
+    );
+
+    // Send verification code email
     try {
       await sendEmail({
         to: user.email,
-        subject: 'Welcome to Laurea Fashion House!',
-        template: 'welcome',
-        data: { firstName: user.first_name, verifyToken }
+        template: 'verificationCode',
+        data: { firstName: user.first_name, code, type: 'register' }
       });
     } catch(emailErr) {
-      console.log('Welcome email failed (non-critical):', emailErr.message);
+      console.log('Verification email failed:', emailErr.message);
     }
 
-    // Track registration login
+    res.status(201).json({
+      success: true,
+      requiresVerification: true,
+      email: user.email,
+      message: 'A 6-digit verification code has been sent to your email.'
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/auth/verify-registration
+const verifyRegistration = async (req, res, next) => {
+  try {
+    const { email, code } = req.body;
+
+    const result = await query(
+      `SELECT vc.*, u.id as user_id FROM verification_codes vc
+       JOIN users u ON u.email = vc.email
+       WHERE vc.email = $1 AND vc.code = $2 AND vc.type = 'register'
+       AND vc.used = false AND vc.expires_at > NOW()
+       ORDER BY vc.created_at DESC LIMIT 1`,
+      [email.toLowerCase(), code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired verification code.' });
+    }
+
+    const record = result.rows[0];
+
+    // Mark code as used
+    await query('UPDATE verification_codes SET used = true WHERE id = $1', [record.id]);
+
+    // Mark user as verified
+    await query(
+      `UPDATE users SET is_email_verified = true, updated_at = NOW() WHERE id = $1`,
+      [record.user_id]
+    );
+
+    // Get full user
+    const userResult = await query('SELECT * FROM users WHERE id = $1', [record.user_id]);
+    const user = userResult.rows[0];
+
+    // Track login
     try {
       const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
       const device = req.headers['user-agent'] || 'unknown';
       const { country, city } = await getLocation(ip);
-
       await query(
         `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
         [user.id]
@@ -99,11 +153,18 @@ const register = async (req, res, next) => {
         `INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`,
         [user.id, ip, device, country, city]
       );
-    } catch(trackErr) {
-      console.log('Login tracking failed (non-critical):', trackErr.message);
-    }
+    } catch(e) { console.log('Track error:', e.message); }
 
-    sendTokenResponse(user, 201, res);
+    // Send welcome email
+    try {
+      await sendEmail({
+        to: user.email,
+        template: 'welcome',
+        data: { firstName: user.first_name }
+      });
+    } catch(e) { console.log('Welcome email failed:', e.message); }
+
+    sendTokenResponse(user, 200, res);
   } catch (err) {
     next(err);
   }
@@ -134,12 +195,65 @@ const login = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
 
-    // Track login with location
+    // Send 2FA code
+    const code = generateCode();
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
+
+    await query(
+      `INSERT INTO verification_codes (user_id, email, code, type, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [user.id, user.email, code, 'login', expires]
+    );
+
+    try {
+      await sendEmail({
+        to: user.email,
+        template: 'verificationCode',
+        data: { firstName: user.first_name, code, type: 'login' }
+      });
+    } catch(e) { console.log('2FA email failed:', e.message); }
+
+    res.json({
+      success: true,
+      requires2FA: true,
+      email: user.email,
+      message: 'A verification code has been sent to your email.'
+    });
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/auth/verify-login
+const verifyLogin = async (req, res, next) => {
+  try {
+    const { email, code } = req.body;
+
+    const result = await query(
+      `SELECT vc.*, u.id as user_id FROM verification_codes vc
+       JOIN users u ON u.email = vc.email
+       WHERE vc.email = $1 AND vc.code = $2 AND vc.type = 'login'
+       AND vc.used = false AND vc.expires_at > NOW()
+       ORDER BY vc.created_at DESC LIMIT 1`,
+      [email.toLowerCase(), code]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired verification code.' });
+    }
+
+    const record = result.rows[0];
+    await query('UPDATE verification_codes SET used = true WHERE id = $1', [record.id]);
+
+    const userResult = await query('SELECT * FROM users WHERE id = $1', [record.user_id]);
+    const user = userResult.rows[0];
+
+    // Track login
     try {
       const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
       const device = req.headers['user-agent'] || 'unknown';
       const { country, city } = await getLocation(ip);
-
       await query(
         `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
         [user.id]
@@ -148,11 +262,41 @@ const login = async (req, res, next) => {
         `INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`,
         [user.id, ip, device, country, city]
       );
-    } catch(trackErr) {
-      console.log('Login tracking failed (non-critical):', trackErr.message);
-    }
+    } catch(e) { console.log('Track error:', e.message); }
 
     sendTokenResponse(user, 200, res);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// POST /api/auth/resend-code
+const resendCode = async (req, res, next) => {
+  try {
+    const { email, type } = req.body;
+
+    const userResult = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const user = userResult.rows[0];
+    const code = generateCode();
+    const expires = new Date(Date.now() + 10 * 60 * 1000);
+
+    await query(
+      `INSERT INTO verification_codes (user_id, email, code, type, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [user.id, user.email, code, type, expires]
+    );
+
+    await sendEmail({
+      to: user.email,
+      template: 'verificationCode',
+      data: { firstName: user.first_name, code, type }
+    });
+
+    res.json({ success: true, message: 'New verification code sent.' });
   } catch (err) {
     next(err);
   }
@@ -242,4 +386,4 @@ const getMe = async (req, res) => {
   res.json({ success: true, user: req.user });
 };
 
-module.exports = { register, login, logout, forgotPassword, resetPassword, getMe };
+module.exports = { register, login, logout, forgotPassword, resetPassword, getMe, verifyRegistration, verifyLogin, resendCode };
