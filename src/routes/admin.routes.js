@@ -154,3 +154,21 @@ router.get('/employees', async (req, res, next) => {
 });
 
 module.exports = router;
+
+// POST /api/admin/users/:id/force-logout
+router.post('/users/:id/force-logout', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userResult = await query('SELECT * FROM users WHERE id = $1', [id]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+    // Invalidate all sessions by deleting user sessions
+    try {
+      await query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
+    } catch(e) { console.log('Session delete error:', e.message); }
+    // Add a force logout flag on the user
+    await query('UPDATE users SET force_logout = true, updated_at = NOW() WHERE id = $1', [id]);
+    res.json({ success: true, message: 'User has been logged out successfully.' });
+  } catch (err) { next(err); }
+});
