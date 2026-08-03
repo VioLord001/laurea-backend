@@ -4,7 +4,6 @@ const { protect, adminOnly } = require('../middleware/auth.middleware');
 const { query } = require('../config/database');
 const bcrypt = require('bcryptjs');
 
-// All admin routes are protected
 router.use(protect, adminOnly);
 
 // GET /api/admin/dashboard
@@ -16,7 +15,6 @@ router.get('/dashboard', async (req, res, next) => {
       query('SELECT COUNT(*) FROM users WHERE role = $1', ['customer']),
       query('SELECT COALESCE(SUM(total_amount), 0) as total FROM orders WHERE payment_status = $1', ['paid']),
     ]);
-
     let recentLogins = { rows: [] };
     try {
       recentLogins = await query(
@@ -25,7 +23,6 @@ router.get('/dashboard', async (req, res, next) => {
          ORDER BY us.logged_in_at DESC LIMIT 10`
       );
     } catch(e) { console.log('user_sessions not ready'); }
-
     res.json({
       success: true,
       stats: {
@@ -66,6 +63,22 @@ router.patch('/users/:id/role', async (req, res, next) => {
     const { role } = req.body;
     await query('UPDATE users SET role = $1 WHERE id = $2', [role, req.params.id]);
     res.json({ success: true, message: `User role updated to ${role}.` });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/users/:id/force-logout
+router.post('/users/:id/force-logout', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userResult = await query('SELECT * FROM users WHERE id = $1', [id]);
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+    try {
+      await query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
+    } catch(e) { console.log('Session delete error:', e.message); }
+    await query('UPDATE users SET force_logout = true, updated_at = NOW() WHERE id = $1', [id]);
+    res.json({ success: true, message: 'User has been logged out successfully.' });
   } catch (err) { next(err); }
 });
 
@@ -129,46 +142,43 @@ router.get('/payment-settings', async (req, res, next) => {
     }
   });
 });
-// POST /api/admin/employees/create — admin creates employee account
-router.post('/employees/create', async (req, res, next) => {
-  try {
-    const { firstName, lastName, email, password, employeeId } = req.body;
-    const existing = await query('SELECT id FROM employees WHERE email = $1', [email]);
-    if (existing.rows.length > 0) return res.status(400).json({ success: false, message: 'Email already exists.' });
-    const hash = await bcrypt.hash(password, 12);
-    const empId = employeeId || 'LFH-' + Date.now().toString().slice(-6);
-    const result = await query(
-      'INSERT INTO employees (first_name, last_name, email, password, employee_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, first_name, last_name, email, employee_id',
-      [firstName, lastName, email, hash, empId]
-    );
-    res.status(201).json({ success: true, employee: result.rows[0] });
-  } catch (err) { next(err); }
-});
 
-// GET /api/admin/employees — list all employees
-router.get('/employees', async (req, res, next) => {
+// GET /api/admin/pending-employees
+router.get('/pending-employees', async (req, res, next) => {
   try {
-    const result = await query('SELECT id, employee_id, first_name, last_name, email, job_position, department, profile_completed, is_active, created_at FROM employees ORDER BY created_at DESC');
+    const result = await query(
+      `SELECT id, first_name, last_name, email, role, is_approved,
+       is_email_verified, created_at, login_count
+       FROM users WHERE role = 'employee' AND (is_approved = false OR is_approved IS NULL)
+       ORDER BY created_at DESC`
+    );
     res.json({ success: true, employees: result.rows });
   } catch (err) { next(err); }
 });
 
-module.exports = router;
-
-// POST /api/admin/users/:id/force-logout
-router.post('/users/:id/force-logout', async (req, res, next) => {
+// POST /api/admin/approve-employee/:id
+router.post('/approve-employee/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { approved, reason } = req.body;
     const userResult = await query('SELECT * FROM users WHERE id = $1', [id]);
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found.' });
-    }
-    // Invalidate all sessions by deleting user sessions
+    if (!userResult.rows.length) return res.status(404).json({ success: false, message: 'User not found.' });
+    const user = userResult.rows[0];
+    await query('UPDATE users SET is_approved = $1, updated_at = NOW() WHERE id = $2', [approved, id]);
     try {
-      await query('DELETE FROM user_sessions WHERE user_id = $1', [id]);
-    } catch(e) { console.log('Session delete error:', e.message); }
-    // Add a force logout flag on the user
-    await query('UPDATE users SET force_logout = true, updated_at = NOW() WHERE id = $1', [id]);
-    res.json({ success: true, message: 'User has been logged out successfully.' });
+      const { sendEmail } = require('../services/email.service');
+      await sendEmail({
+        to: user.email,
+        template: approved ? 'employeeApproved' : 'employeeRejected',
+        data: {
+          firstName: user.first_name,
+          reason: reason || '',
+          loginUrl: `${process.env.CLIENT_URL}/auth/login`
+        }
+      });
+    } catch(e) { console.log('Email failed:', e.message); }
+    res.json({ success: true, message: approved ? 'Employee approved!' : 'Employee rejected.' });
   } catch (err) { next(err); }
 });
+
+module.exports = router;
