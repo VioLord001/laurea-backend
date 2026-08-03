@@ -1,8 +1,14 @@
-const SibApiV3Sdk = require('sib-api-v3-sdk');
+const nodemailer = require('nodemailer');
 
-const defaultClient = SibApiV3Sdk.ApiClient.instance;
-const apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
+const transporter = nodemailer.createTransport({
+  host: 'mail.privateemail.com',
+  port: 465,
+  secure: true,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  }
+});
 
 const emailTemplates = {
   welcome: (data) => ({
@@ -107,23 +113,16 @@ const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
     const templateFn = emailTemplates[template];
     const content = templateFn ? templateFn(data) : { subject, html };
-
-    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
-
-    sendSmtpEmail.sender = {
-      name: 'Laurea Fashion House',
-      email: process.env.FROM_EMAIL_ADDRESS || 'noreply@laureafashionhouse.com'
-    };
-    sendSmtpEmail.to = [{ email: to }];
-    sendSmtpEmail.subject = content.subject;
-    sendSmtpEmail.htmlContent = content.html;
-
-    const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
-    console.log('Email sent via Brevo!');
-    return result;
+    const info = await transporter.sendMail({
+      from: `"Laurea Fashion House" <${process.env.SMTP_USER}>`,
+      to,
+      subject: content.subject,
+      html: content.html
+    });
+    console.log('Email sent:', info.messageId);
+    return info;
   } catch (err) {
-    console.error('Brevo email error:', err?.response?.text || err.message);
+    console.error('Email error:', err.message);
   }
 };
 
