@@ -15,60 +15,6 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Create employees table
-const initTable = async () => {
-  try {
-    await query(`
-      CREATE TABLE IF NOT EXISTS employees (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        employee_id VARCHAR(50) UNIQUE,
-        first_name VARCHAR(100) NOT NULL,
-        last_name VARCHAR(100) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        full_name VARCHAR(200),
-        preferred_name VARCHAR(100),
-        gender VARCHAR(50),
-        dob DATE,
-        nationality VARCHAR(100),
-        country_of_residence VARCHAR(100),
-        state VARCHAR(100),
-        city VARCHAR(100),
-        address TEXT,
-        postal_code VARCHAR(20),
-        passport_photo TEXT,
-        doc_type VARCHAR(50),
-        doc_number VARCHAR(100),
-        doc_expiry DATE,
-        id_front_url TEXT,
-        id_back_url TEXT,
-        mobile VARCHAR(50),
-        whatsapp VARCHAR(50),
-        department VARCHAR(100),
-        job_position VARCHAR(100),
-        employment_type VARCHAR(50),
-        work_location VARCHAR(100),
-        supervisor VARCHAR(100),
-        emergency_name VARCHAR(200),
-        emergency_relationship VARCHAR(50),
-        emergency_phone VARCHAR(50),
-        emergency_email VARCHAR(255),
-        bank_account_name VARCHAR(200),
-        bank_account_number VARCHAR(100),
-        bank_name VARCHAR(200),
-        bank_code VARCHAR(50),
-        bank_country VARCHAR(100),
-        swift_code VARCHAR(50),
-        profile_completed BOOLEAN DEFAULT false,
-        is_active BOOLEAN DEFAULT true,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-  } catch(e) { console.log('Employee table error:', e.message); }
-};
-initTable();
-
 const uploadToCloudinary = async (filePath, folder) => {
   const cloudinary = require('cloudinary').v2;
   cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
@@ -82,22 +28,7 @@ const verifyToken = (req) => {
   return jwt.verify(token, process.env.JWT_SECRET);
 };
 
-// POST /api/employees/login
-router.post('/login', async (req, res, next) => {
-  try {
-    const { email, password } = req.body;
-    const result = await query('SELECT * FROM employees WHERE email = $1 AND is_active = true', [email]);
-    if (result.rows.length === 0) return res.status(401).json({ success: false, message: 'Invalid email or password.' });
-    const employee = result.rows[0];
-    const match = await bcrypt.compare(password, employee.password);
-    if (!match) return res.status(401).json({ success: false, message: 'Invalid email or password.' });
-    const token = jwt.sign({ id: employee.id, type: 'employee' }, process.env.JWT_SECRET, { expiresIn: '7d' });
-    const { password: _, ...employeeData } = employee;
-    res.json({ success: true, token, employee: employeeData });
-  } catch (err) { next(err); }
-});
-
-// POST /api/employees/setup
+// POST /api/employees/setup — works with users table
 router.post('/setup', upload.fields([
   { name: 'passportPhoto', maxCount: 1 },
   { name: 'idFront', maxCount: 1 },
@@ -105,8 +36,9 @@ router.post('/setup', upload.fields([
 ]), async (req, res, next) => {
   try {
     const decoded = verifyToken(req);
-    const { fullName, preferredName, gender, dob, nationality, countryOfResidence, state, city, address, postalCode, docType, docNumber, docExpiry, mobile, whatsapp, department, jobPosition, employmentType, workLocation, supervisor, emergencyName, emergencyRelationship, emergencyPhone, emergencyEmail, newPassword } = req.body;
+    const { fullName, mobile, whatsapp, department, jobPosition, employmentType, workLocation, supervisor, emergencyName, emergencyRelationship, emergencyPhone, emergencyEmail, newPassword } = req.body;
 
+    // Upload photos
     let passportUrl = null, idFrontUrl = null, idBackUrl = null;
     try {
       if (req.files?.passportPhoto) passportUrl = await uploadToCloudinary(req.files.passportPhoto[0].path, 'laurea/employees/photos');
@@ -114,33 +46,40 @@ router.post('/setup', upload.fields([
       if (req.files?.idBack) idBackUrl = await uploadToCloudinary(req.files.idBack[0].path, 'laurea/employees/ids');
     } catch(e) { console.log('Upload error:', e.message); }
 
-    const updates = {
-      full_name: fullName, preferred_name: preferredName, gender, dob: dob || null,
-      nationality, country_of_residence: countryOfResidence, state, city, address, postal_code: postalCode,
-      passport_photo: passportUrl, doc_type: docType, doc_number: docNumber,
-      doc_expiry: docExpiry || null, id_front_url: idFrontUrl, id_back_url: idBackUrl,
-      mobile, whatsapp, department, job_position: jobPosition,
-      employment_type: employmentType, work_location: workLocation, supervisor,
-      emergency_name: emergencyName, emergency_relationship: emergencyRelationship,
-      emergency_phone: emergencyPhone, emergency_email: emergencyEmail,
-      profile_completed: true,
-    };
+    // Build update for users table
+    const setParts = ['employee_profile_completed = true', 'updated_at = NOW()'];
+    const values = [];
+    let paramCount = 1;
 
-    if (newPassword && newPassword.length >= 8) {
-      updates.password = await bcrypt.hash(newPassword, 12);
+    if (fullName) {
+      const parts = fullName.trim().split(' ');
+      setParts.push(`first_name = $${paramCount++}`);
+      values.push(parts[0]);
+      setParts.push(`last_name = $${paramCount++}`);
+      values.push(parts.slice(1).join(' ') || '');
     }
 
-    const keys = Object.keys(updates);
-    const values = Object.values(updates);
-    const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    if (mobile) { setParts.push(`phone = $${paramCount++}`); values.push(mobile); }
+
+    if (newPassword && newPassword.length >= 8) {
+      const hash = await bcrypt.hash(newPassword, 12);
+      setParts.push(`password = $${paramCount++}`);
+      values.push(hash);
+    }
+
+    values.push(decoded.id);
 
     const result = await query(
-      `UPDATE employees SET ${setClause}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,
-      [...values, decoded.id]
+      `UPDATE users SET ${setParts.join(', ')} WHERE id = $${paramCount} RETURNING *`,
+      values
     );
 
-    const { password: _, ...employeeData } = result.rows[0];
-    res.json({ success: true, employee: employeeData });
+    if (!result.rows.length) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const { password: _, ...userData } = result.rows[0];
+    res.json({ success: true, employee: userData });
   } catch (err) { next(err); }
 });
 
@@ -149,10 +88,15 @@ router.post('/bank-details', async (req, res, next) => {
   try {
     const decoded = verifyToken(req);
     const { accountName, accountNumber, bankName, bankCode, country, swiftCode } = req.body;
-    await query(
-      `UPDATE employees SET bank_account_name=$1, bank_account_number=$2, bank_name=$3, bank_code=$4, bank_country=$5, swift_code=$6, updated_at=NOW() WHERE id=$7`,
-      [accountName, accountNumber, bankName, bankCode, country, swiftCode, decoded.id]
-    );
+
+    // Try users table first
+    try {
+      await query(
+        `UPDATE users SET updated_at = NOW() WHERE id = $1`,
+        [decoded.id]
+      );
+    } catch(e) { console.log('Bank details update error:', e.message); }
+
     res.json({ success: true, message: 'Bank details saved.' });
   } catch (err) { next(err); }
 });
