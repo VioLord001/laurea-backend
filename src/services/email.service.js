@@ -1,5 +1,8 @@
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+const SibApiV3Sdk = require('sib-api-v3-sdk');
+
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
 const emailTemplates = {
   welcome: (data) => ({
@@ -39,7 +42,7 @@ const emailTemplates = {
         <div style="padding:32px 24px;text-align:center;">
           <h2 style="color:#1c1208;">${data.type === 'login' ? 'Login Verification' : 'Verify Your Email'}</h2>
           <p style="color:#8a7a6a;">Hello ${data.firstName}, use the code below to ${data.type === 'login' ? 'complete your login' : 'verify your email address'}.</p>
-          <div style="background:#faf8f5;border:2px solid #b8966a;border-radius:12px;padding:32px;margin:24px 0;display:inline-block;width:100%;box-sizing:border-box;">
+          <div style="background:#faf8f5;border:2px solid #b8966a;border-radius:12px;padding:32px;margin:24px 0;">
             <p style="font-size:48px;font-weight:700;letter-spacing:12px;color:#1c1208;margin:0;">${data.code}</p>
             <p style="color:#8a7a6a;font-size:12px;margin:12px 0 0;">This code expires in <strong>10 minutes</strong></p>
           </div>
@@ -104,15 +107,23 @@ const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
     const templateFn = emailTemplates[template];
     const content = templateFn ? templateFn(data) : { subject, html };
-    const result = await resend.emails.send({
-      from: process.env.FROM_EMAIL || 'Laurea Fashion House <noreply@laureafashionhouse.com>',
-      to,
-      subject: content.subject,
-      html: content.html
-    });
+
+    const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+
+    sendSmtpEmail.sender = {
+      name: 'Laurea Fashion House',
+      email: process.env.FROM_EMAIL_ADDRESS || 'noreply@laureafashionhouse.com'
+    };
+    sendSmtpEmail.to = [{ email: to }];
+    sendSmtpEmail.subject = content.subject;
+    sendSmtpEmail.htmlContent = content.html;
+
+    const result = await apiInstance.sendTransacEmail(sendSmtpEmail);
+    console.log('Email sent via Brevo!');
     return result;
   } catch (err) {
-    console.error('Email send failed:', err);
+    console.error('Brevo email error:', err?.response?.text || err.message);
   }
 };
 
