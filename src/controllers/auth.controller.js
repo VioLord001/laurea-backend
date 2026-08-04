@@ -22,20 +22,19 @@ const sendTokenResponse = (user, statusCode, res) => {
     success: true,
     token,
     user: {
- 	id: user.id,
-  	first_name: user.first_name,
-  	last_name: user.last_name,
-  	firstName: user.first_name,
-  	lastName: user.last_name,
-  	email: user.email,
-  	role: user.role || 'customer',
-  	avatar: user.avatar,
- 	employee_profile_completed: user.employee_profile_completed || false,
-  	is_approved: user.is_approved !== false,
-  	nationality: user.nationality || '',
-  	country_of_residence: user.country_of_residence || '',
-  	phone: user.phone || '',
-}
+      id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email,
+      role: user.role || 'customer',
+      avatar: user.avatar,
+      employee_profile_completed: user.employee_profile_completed || false,
+      is_approved: user.is_approved !== false,
+      nationality: user.nationality || '',
+      country_of_residence: user.country_of_residence || '',
+      phone: user.phone || '',
     }
   });
 };
@@ -90,14 +89,29 @@ const register = async (req, res, next) => {
     );
 
     // Send verification code email
+    let regEmailSent = false;
     try {
       await sendEmail({
         to: user.email,
         template: 'verificationCode',
         data: { firstName: user.first_name, code, type: 'register' }
       });
+      regEmailSent = true;
     } catch(emailErr) {
       console.log('Verification email failed:', emailErr.message);
+    }
+
+    // If email fails — auto verify and log in
+    if (!regEmailSent) {
+      await query(`UPDATE users SET is_email_verified = true WHERE id = $1`, [user.id]);
+      try {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
+        const device = req.headers['user-agent'] || 'unknown';
+        const { country, city } = await getLocation(ip);
+        await query(`UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`, [user.id]);
+        await query(`INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`, [user.id, ip, device, country, city]);
+      } catch(e) {}
+      return sendTokenResponse(user, 201, res);
     }
 
     res.status(201).json({
@@ -131,36 +145,20 @@ const verifyRegistration = async (req, res, next) => {
     }
 
     const record = result.rows[0];
-
-    // Mark code as used
     await query('UPDATE verification_codes SET used = true WHERE id = $1', [record.id]);
+    await query(`UPDATE users SET is_email_verified = true, updated_at = NOW() WHERE id = $1`, [record.user_id]);
 
-    // Mark user as verified
-    await query(
-      `UPDATE users SET is_email_verified = true, updated_at = NOW() WHERE id = $1`,
-      [record.user_id]
-    );
-
-    // Get full user
     const userResult = await query('SELECT * FROM users WHERE id = $1', [record.user_id]);
     const user = userResult.rows[0];
 
-    // Track login
     try {
       const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
       const device = req.headers['user-agent'] || 'unknown';
       const { country, city } = await getLocation(ip);
-      await query(
-        `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
-        [user.id]
-      );
-      await query(
-        `INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, ip, device, country, city]
-      );
+      await query(`UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`, [user.id]);
+      await query(`INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`, [user.id, ip, device, country, city]);
     } catch(e) { console.log('Track error:', e.message); }
 
-    // Send welcome email
     try {
       await sendEmail({
         to: user.email,
@@ -210,13 +208,27 @@ const login = async (req, res, next) => {
       [user.id, user.email, code, 'login', expires]
     );
 
+    let emailSent = false;
     try {
       await sendEmail({
         to: user.email,
         template: 'verificationCode',
         data: { firstName: user.first_name, code, type: 'login' }
       });
+      emailSent = true;
     } catch(e) { console.log('2FA email failed:', e.message); }
+
+    // If email fails — log in directly
+    if (!emailSent) {
+      try {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
+        const device = req.headers['user-agent'] || 'unknown';
+        const { country, city } = await getLocation(ip);
+        await query(`UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`, [user.id]);
+        await query(`INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`, [user.id, ip, device, country, city]);
+      } catch(e) {}
+      return sendTokenResponse(user, 200, res);
+    }
 
     res.json({
       success: true,
@@ -254,19 +266,12 @@ const verifyLogin = async (req, res, next) => {
     const userResult = await query('SELECT * FROM users WHERE id = $1', [record.user_id]);
     const user = userResult.rows[0];
 
-    // Track login
     try {
       const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip || 'unknown';
       const device = req.headers['user-agent'] || 'unknown';
       const { country, city } = await getLocation(ip);
-      await query(
-        `UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`,
-        [user.id]
-      );
-      await query(
-        `INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`,
-        [user.id, ip, device, country, city]
-      );
+      await query(`UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = $1`, [user.id]);
+      await query(`INSERT INTO user_sessions (user_id, ip_address, device, country, city) VALUES ($1, $2, $3, $4, $5)`, [user.id, ip, device, country, city]);
     } catch(e) { console.log('Track error:', e.message); }
 
     sendTokenResponse(user, 200, res);
@@ -279,28 +284,23 @@ const verifyLogin = async (req, res, next) => {
 const resendCode = async (req, res, next) => {
   try {
     const { email, type } = req.body;
-
     const userResult = await query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
-
     const user = userResult.rows[0];
     const code = generateCode();
     const expires = new Date(Date.now() + 10 * 60 * 1000);
-
     await query(
       `INSERT INTO verification_codes (user_id, email, code, type, expires_at)
        VALUES ($1, $2, $3, $4, $5)`,
       [user.id, user.email, code, type, expires]
     );
-
     await sendEmail({
       to: user.email,
       template: 'verificationCode',
       data: { firstName: user.first_name, code, type }
     });
-
     res.json({ success: true, message: 'New verification code sent.' });
   } catch (err) {
     next(err);
