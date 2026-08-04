@@ -22,15 +22,20 @@ const sendTokenResponse = (user, statusCode, res) => {
     success: true,
     token,
     user: {
-      id: user.id,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      email: user.email,
-      role: user.role || 'customer',
-      avatar: user.avatar,
-      employee_profile_completed: user.employee_profile_completed || false,
+ 	id: user.id,
+  	first_name: user.first_name,
+  	last_name: user.last_name,
+  	firstName: user.first_name,
+  	lastName: user.last_name,
+  	email: user.email,
+  	role: user.role || 'customer',
+  	avatar: user.avatar,
+ 	employee_profile_completed: user.employee_profile_completed || false,
+  	is_approved: user.is_approved !== false,
+  	nationality: user.nationality || '',
+  	country_of_residence: user.country_of_residence || '',
+  	phone: user.phone || '',
+}
     }
   });
 };

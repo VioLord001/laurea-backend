@@ -28,7 +28,7 @@ const verifyToken = (req) => {
   return jwt.verify(token, process.env.JWT_SECRET);
 };
 
-// POST /api/employees/setup — works with users table
+// POST /api/employees/setup
 router.post('/setup', upload.fields([
   { name: 'passportPhoto', maxCount: 1 },
   { name: 'idFront', maxCount: 1 },
@@ -36,7 +36,13 @@ router.post('/setup', upload.fields([
 ]), async (req, res, next) => {
   try {
     const decoded = verifyToken(req);
-    const { fullName, mobile, whatsapp, department, jobPosition, employmentType, workLocation, supervisor, emergencyName, emergencyRelationship, emergencyPhone, emergencyEmail, newPassword } = req.body;
+    const {
+      fullName, mobile, whatsapp, nationality, countryOfResidence,
+      state, city, address, postalCode, docType, docNumber, docExpiry,
+      department, jobPosition, employmentType, workLocation, supervisor,
+      emergencyName, emergencyRelationship, emergencyPhone, emergencyEmail,
+      newPassword
+    } = req.body;
 
     // Upload photos
     let passportUrl = null, idFrontUrl = null, idBackUrl = null;
@@ -47,7 +53,7 @@ router.post('/setup', upload.fields([
     } catch(e) { console.log('Upload error:', e.message); }
 
     // Build update for users table
-    const setParts = ['employee_profile_completed = true', 'updated_at = NOW()'];
+    const setParts = ['employee_profile_completed = true', 'is_approved = false', 'updated_at = NOW()'];
     const values = [];
     let paramCount = 1;
 
@@ -58,8 +64,9 @@ router.post('/setup', upload.fields([
       setParts.push(`last_name = $${paramCount++}`);
       values.push(parts.slice(1).join(' ') || '');
     }
-
     if (mobile) { setParts.push(`phone = $${paramCount++}`); values.push(mobile); }
+    if (nationality) { setParts.push(`nationality = $${paramCount++}`); values.push(nationality); }
+    if (countryOfResidence) { setParts.push(`country_of_residence = $${paramCount++}`); values.push(countryOfResidence); }
 
     if (newPassword && newPassword.length >= 8) {
       const hash = await bcrypt.hash(newPassword, 12);
@@ -87,16 +94,13 @@ router.post('/setup', upload.fields([
 router.post('/bank-details', async (req, res, next) => {
   try {
     const decoded = verifyToken(req);
-    const { accountName, accountNumber, bankName, bankCode, country, swiftCode } = req.body;
-
-    // Try users table first
+    const { accountName, accountNumber, bankName, bankCode, country, swiftCode, pix, cpf } = req.body;
     try {
       await query(
         `UPDATE users SET updated_at = NOW() WHERE id = $1`,
         [decoded.id]
       );
     } catch(e) { console.log('Bank details update error:', e.message); }
-
     res.json({ success: true, message: 'Bank details saved.' });
   } catch (err) { next(err); }
 });
