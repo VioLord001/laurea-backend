@@ -148,7 +148,12 @@ router.get('/pending-employees', async (req, res, next) => {
   try {
     const result = await query(
       `SELECT id, first_name, last_name, email, role, is_approved,
-       is_email_verified, created_at, login_count
+       is_email_verified, created_at, login_count, phone, whatsapp,
+       nationality, country_of_residence, state, city, address,
+       gender, dob, doc_type, doc_number, id_front_url, id_back_url,
+       passport_photo_url, job_position, department, employment_type,
+       work_location, supervisor, emergency_name, emergency_relationship,
+       emergency_phone, employee_profile_completed
        FROM users WHERE role = 'employee' AND (is_approved = false OR is_approved IS NULL)
        ORDER BY created_at DESC`
     );

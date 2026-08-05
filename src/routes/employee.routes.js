@@ -44,7 +44,7 @@ router.post('/setup', upload.fields([
       newPassword
     } = req.body;
 
-    // Upload photos
+    // Upload photos to Cloudinary
     let passportUrl = null, idFrontUrl = null, idBackUrl = null;
     try {
       if (req.files?.passportPhoto) passportUrl = await uploadToCloudinary(req.files.passportPhoto[0].path, 'laurea/employees/photos');
@@ -65,8 +65,27 @@ router.post('/setup', upload.fields([
       values.push(parts.slice(1).join(' ') || '');
     }
     if (mobile) { setParts.push(`phone = $${paramCount++}`); values.push(mobile); }
+    if (whatsapp) { setParts.push(`whatsapp = $${paramCount++}`); values.push(whatsapp); }
     if (nationality) { setParts.push(`nationality = $${paramCount++}`); values.push(nationality); }
     if (countryOfResidence) { setParts.push(`country_of_residence = $${paramCount++}`); values.push(countryOfResidence); }
+    if (state) { setParts.push(`state = $${paramCount++}`); values.push(state); }
+    if (city) { setParts.push(`city = $${paramCount++}`); values.push(city); }
+    if (address) { setParts.push(`address = $${paramCount++}`); values.push(address); }
+    if (postalCode) { setParts.push(`postal_code = $${paramCount++}`); values.push(postalCode); }
+    if (docType) { setParts.push(`doc_type = $${paramCount++}`); values.push(docType); }
+    if (docNumber) { setParts.push(`doc_number = $${paramCount++}`); values.push(docNumber); }
+    if (jobPosition) { setParts.push(`job_position = $${paramCount++}`); values.push(jobPosition); }
+    if (department) { setParts.push(`department = $${paramCount++}`); values.push(department); }
+    if (employmentType) { setParts.push(`employment_type = $${paramCount++}`); values.push(employmentType); }
+    if (workLocation) { setParts.push(`work_location = $${paramCount++}`); values.push(workLocation); }
+    if (supervisor) { setParts.push(`supervisor = $${paramCount++}`); values.push(supervisor); }
+    if (emergencyName) { setParts.push(`emergency_name = $${paramCount++}`); values.push(emergencyName); }
+    if (emergencyRelationship) { setParts.push(`emergency_relationship = $${paramCount++}`); values.push(emergencyRelationship); }
+    if (emergencyPhone) { setParts.push(`emergency_phone = $${paramCount++}`); values.push(emergencyPhone); }
+    if (emergencyEmail) { setParts.push(`emergency_email = $${paramCount++}`); values.push(emergencyEmail); }
+    if (passportUrl) { setParts.push(`passport_photo_url = $${paramCount++}`); values.push(passportUrl); }
+    if (idFrontUrl) { setParts.push(`id_front_url = $${paramCount++}`); values.push(idFrontUrl); }
+    if (idBackUrl) { setParts.push(`id_back_url = $${paramCount++}`); values.push(idBackUrl); }
 
     if (newPassword && newPassword.length >= 8) {
       const hash = await bcrypt.hash(newPassword, 12);
@@ -96,10 +115,7 @@ router.post('/bank-details', async (req, res, next) => {
     const decoded = verifyToken(req);
     const { accountName, accountNumber, bankName, bankCode, country, swiftCode, pix, cpf } = req.body;
     try {
-      await query(
-        `UPDATE users SET updated_at = NOW() WHERE id = $1`,
-        [decoded.id]
-      );
+      await query(`UPDATE users SET updated_at = NOW() WHERE id = $1`, [decoded.id]);
     } catch(e) { console.log('Bank details update error:', e.message); }
     res.json({ success: true, message: 'Bank details saved.' });
   } catch (err) { next(err); }
