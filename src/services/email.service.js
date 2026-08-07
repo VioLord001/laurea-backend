@@ -182,7 +182,7 @@ const sendEmail = async ({ to, subject, template, data, html }) => {
     const content = templateFn ? templateFn(data) : { subject, html };
     const info = await transporter.sendMail({
       from: `"Laurea Fashion House" <${process.env.SMTP_USER}>`,
-      replyTo: 'admin@laureafashionhouse.com',
+      replyTo: 'support@laureafashionhouse.com',
       to,
       subject: content.subject,
       html: content.html,
