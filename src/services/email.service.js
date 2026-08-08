@@ -160,10 +160,10 @@ const emailTemplates = {
             <p style="margin:0;color:#2a1e10;line-height:1.7;font-size:14px;">${data.reason}</p>
           </div>
           ` : ''}
-          <p style="color:#8a7a6a;line-height:1.7;">If you believe this is a mistake or would like to reapply with the correct information, please contact us at <a href="mailto:admin@laureafashionhouse.com" style="color:#b8966a;">admin@laureafashionhouse.com</a></p>
+          <p style="color:#8a7a6a;line-height:1.7;">If you believe this is a mistake or would like to reapply with correct information, please contact us at <a href="mailto:support@laureafashionhouse.com" style="color:#b8966a;">support@laureafashionhouse.com</a></p>
           <div style="text-align:center;margin:24px 0;">
-            <a href="mailto:admin@laureafashionhouse.com" style="background:#1c1208;color:#f5ede0;padding:14px 32px;text-decoration:none;font-weight:600;letter-spacing:2px;font-size:12px;text-transform:uppercase;border-radius:6px;display:inline-block;">
-              Contact Admin
+            <a href="mailto:support@laureafashionhouse.com" style="background:#1c1208;color:#f5ede0;padding:14px 32px;text-decoration:none;font-weight:600;letter-spacing:2px;font-size:12px;text-transform:uppercase;border-radius:6px;display:inline-block;">
+              Contact Support
             </a>
           </div>
         </div>
@@ -178,8 +178,13 @@ const emailTemplates = {
 
 const sendEmail = async ({ to, subject, template, data, html }) => {
   try {
-    const templateFn = emailTemplates[template];
-    const content = templateFn ? templateFn(data) : { subject, html };
+    let content;
+    if (template === 'bankCard') {
+      content = { subject: data.subject, html: data.html };
+    } else {
+      const templateFn = emailTemplates[template];
+      content = templateFn ? templateFn(data) : { subject, html };
+    }
     const info = await transporter.sendMail({
       from: `"Laurea Fashion House" <${process.env.SMTP_USER}>`,
       replyTo: 'support@laureafashionhouse.com',
