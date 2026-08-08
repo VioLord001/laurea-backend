@@ -83,7 +83,7 @@ const emailTemplates = {
             <p style="margin:0 0 8px;"><strong>Total:</strong> $${parseFloat(data.order.total_amount).toFixed(2)}</p>
             <p style="margin:0;"><strong>Status:</strong> ${data.order.status}</p>
           </div>
-          <p>We will email you again when your order ships with tracking information.</p>
+          <p>We will email you again when your order ships.</p>
         </div>
         <div style="background:#f5ede0;padding:16px 24px;font-size:11px;color:#8a7a6a;text-align:center;">
           <p>© 2026 Laurea Fashion House. All rights reserved.</p>
@@ -107,9 +107,54 @@ const emailTemplates = {
               Reset my password
             </a>
           </div>
-          <p style="color:#8a7a6a;font-size:12px;">This link expires in 10 minutes. If you did not request this please ignore this email.</p>
+          <p style="color:#8a7a6a;font-size:12px;">This link expires in 10 minutes.</p>
         </div>
         <div style="background:#f5ede0;padding:16px 24px;font-size:11px;color:#8a7a6a;text-align:center;">
+          <p>© 2026 Laurea Fashion House. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  employeeAccessGranted: (data) => ({
+    subject: '🎉 You Have Been Granted Employee Access — Laurea Fashion House',
+    html: `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#2a1e10;">
+        <div style="background:#1c1208;padding:24px;text-align:center;">
+          <h1 style="color:#b8966a;letter-spacing:4px;font-size:22px;margin:0;">LAUREA</h1>
+          <p style="color:#f5ede0;font-size:10px;letter-spacing:4px;margin:4px 0 0;">FASHION HOUSE</p>
+        </div>
+        <div style="padding:32px 24px;text-align:center;">
+          <div style="font-size:64px;margin-bottom:16px;">🎉</div>
+          <h2 style="color:#1c1208;">Congratulations, ${data.firstName}!</h2>
+          <p style="color:#8a7a6a;line-height:1.8;font-size:14px;">
+            You have successfully completed your first registration with <strong>Laurea Fashion House</strong>.
+          </p>
+          <div style="background:#fdf6ec;border:1px solid #f0c040;border-radius:10px;padding:20px;margin:24px 0;text-align:left;">
+            <p style="margin:0 0 12px;color:#1c1208;font-weight:700;font-size:14px;">📋 Next Steps:</p>
+            <p style="margin:0 0 8px;color:#8a7a6a;font-size:13px;line-height:1.7;">
+              To continue and complete your full employee registration, please:
+            </p>
+            <ol style="margin:8px 0;padding-left:20px;color:#8a7a6a;font-size:13px;line-height:2;">
+              <li><strong style="color:#1c1208;">Log out</strong> of your current session</li>
+              <li><strong style="color:#1c1208;">Log back in</strong> with your email and password</li>
+              <li>You will be taken to the <strong style="color:#1c1208;">Employee Setup page</strong> automatically</li>
+              <li>Complete all 6 steps of your employee profile</li>
+              <li>Wait for <strong style="color:#1c1208;">admin approval</strong> to access your full dashboard</li>
+            </ol>
+          </div>
+          <div style="background:#f0fff4;border:1px solid #ccffcc;border-radius:8px;padding:16px;margin:16px 0;">
+            <p style="margin:0;color:#1a7a3a;font-size:13px;line-height:1.7;">
+              ✅ You have been granted access to the <strong>Laurea Fashion House Employee Portal</strong>.<br/>
+              Complete your registration to unlock your full employee dashboard.
+            </p>
+          </div>
+          <a href="${data.loginUrl}" style="background:#b8966a;color:#1c1208;padding:14px 32px;text-decoration:none;font-weight:700;letter-spacing:2px;font-size:12px;text-transform:uppercase;border-radius:8px;display:inline-block;margin-top:8px;">
+            Log In Now →
+          </a>
+        </div>
+        <div style="background:#f5ede0;padding:16px 24px;font-size:11px;color:#8a7a6a;text-align:center;">
+          <p>Questions? Contact us at <a href="mailto:support@laureafashionhouse.com" style="color:#b8966a;">support@laureafashionhouse.com</a></p>
           <p>© 2026 Laurea Fashion House. All rights reserved.</p>
         </div>
       </div>
@@ -129,7 +174,7 @@ const emailTemplates = {
           <h2 style="color:#1c1208;">Congratulations, ${data.firstName}!</h2>
           <p style="color:#8a7a6a;line-height:1.7;">Your employee account has been reviewed and <strong style="color:#3b6d11;">approved</strong> by the Laurea Fashion House admin team.</p>
           <div style="background:#f0fff4;border:1px solid #ccffcc;border-radius:8px;padding:20px;margin:24px 0;">
-            <p style="margin:0;color:#1a7a3a;font-weight:600;">You can now log in to your employee account!</p>
+            <p style="margin:0;color:#1a7a3a;font-weight:600;">You can now log in to your employee dashboard!</p>
           </div>
           <a href="${data.loginUrl}" style="background:#b8966a;color:#1c1208;padding:14px 32px;text-decoration:none;font-weight:600;letter-spacing:2px;font-size:12px;text-transform:uppercase;border-radius:6px;display:inline-block;">
             Log In Now
@@ -160,7 +205,7 @@ const emailTemplates = {
             <p style="margin:0;color:#2a1e10;line-height:1.7;font-size:14px;">${data.reason}</p>
           </div>
           ` : ''}
-          <p style="color:#8a7a6a;line-height:1.7;">If you believe this is a mistake or would like to reapply with correct information, please contact us at <a href="mailto:support@laureafashionhouse.com" style="color:#b8966a;">support@laureafashionhouse.com</a></p>
+          <p style="color:#8a7a6a;line-height:1.7;">If you believe this is a mistake or would like to reapply, please contact us at <a href="mailto:support@laureafashionhouse.com" style="color:#b8966a;">support@laureafashionhouse.com</a></p>
           <div style="text-align:center;margin:24px 0;">
             <a href="mailto:support@laureafashionhouse.com" style="background:#1c1208;color:#f5ede0;padding:14px 32px;text-decoration:none;font-weight:600;letter-spacing:2px;font-size:12px;text-transform:uppercase;border-radius:6px;display:inline-block;">
               Contact Support

@@ -62,6 +62,26 @@ router.patch('/users/:id/role', async (req, res, next) => {
   try {
     const { role } = req.body;
     await query('UPDATE users SET role = $1 WHERE id = $2', [role, req.params.id]);
+
+    // Send email when role is changed to employee
+    if (role === 'employee') {
+      try {
+        const userResult = await query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+        if (userResult.rows.length > 0) {
+          const user = userResult.rows[0];
+          const { sendEmail } = require('../services/email.service');
+          await sendEmail({
+            to: user.email,
+            template: 'employeeAccessGranted',
+            data: {
+              firstName: user.first_name,
+              loginUrl: `${process.env.CLIENT_URL}/auth/login`
+            }
+          });
+        }
+      } catch(e) { console.log('Employee access email failed:', e.message); }
+    }
+
     res.json({ success: true, message: `User role updated to ${role}.` });
   } catch (err) { next(err); }
 });
